@@ -1,6 +1,7 @@
 import feedparser
 from newspaper import Article
 import requests
+from typing import List, Dict
 
 def fetch_rss_feeds(feed_urls: List[str]) -> List[Dict]:
     """Fetch articles from RSS feeds"""
