@@ -1,89 +1,140 @@
 import os
-import sys
-import logging
 from dotenv import load_dotenv
+from langchain_google_genai import ChatGoogleGenerativeAI
+from bs4 import BeautifulSoup
+import requests
+
+# Load environment
 load_dotenv()
 
-from news_agent.agent import create_news_agent
+api_key = os.getenv("GOOGLE_API_KEY")
+if not api_key:
+    raise ValueError("GOOGLE_API_KEY not set")
 
-
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('news_agent.log'),
-        logging.StreamHandler()
-    ]
+# Initialize LLM
+llm = ChatGoogleGenerativeAI(
+    model="gemini-2.5-flash-lite",
+    google_api_key=api_key,
+    temperature=0.3
 )
-logger = logging.getLogger(__name__)
 
+PROMPTS = {
+    "analyze": """Analyze this article about AI/Technology and provide:
+1. Main topic
+2. 3-5 key facts
+3. Important entities mentioned
+4. Summary (2-3 sentences)
 
-# Default news sources
-DEFAULT_SOURCES = [
-    "https://news.google.com/rss/search?q=AI+technology",
-    "https://feeds.bbci.co.uk/news/technology/rss.xml",
-    "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml"
-]
+Article:
+{content}
 
-CUSTOM_SOURCES = [
-    "https://news.google.com/rss/search?q=machine+learning",
-    "https://feeds.bbci.co.uk/news/world/rss.xml"
-]
+Provide a structured analysis.""",
 
+    "report": """Create a comprehensive news analysis report:
 
-def run_analysis(sources, query):
-    """Execute the news analysis workflow"""
+Analysis 1:
+{analysis1}
+
+Analysis 2:
+{analysis2}
+
+Provide a professional report combining these analyses."""
+}
+
+def scrape_url(url: str) -> str:
+    """Scrape content from a URL"""
+    print(f"Scraping: {url}")
+    
     try:
-        # Verify API key
-        if not os.getenv("GOOGLE_API_KEY"):
-            raise ValueError("GOOGLE_API_KEY not set in .env file")
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
         
-        logger.info(f"Starting analysis with {len(sources)} sources")
+        soup = BeautifulSoup(response.content, 'html.parser')
         
-        # Create and run agent
-        agent = create_news_agent()
-        result = agent.invoke({"query": query, "sources": sources})
+        # Remove scripts and styles
+        for script in soup(["script", "style"]):
+            script.decompose()
         
-        # Display results
-        print("\n" + "="*60)
-        print("NEWS ANALYSIS REPORT")
-        print("="*60 + "\n")
-        print(result["final_report"])
+        # Get text
+        text = soup.get_text()
+        lines = (line.strip() for line in text.splitlines())
+        chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+        text = '\n'.join(chunk for chunk in chunks if chunk)
         
-        # Show statistics
-        print("\n" + "="*60)
-        print("STATISTICS")
-        print("="*60)
-        print(f"Articles Gathered: {len(result.get('raw_articles', []))}")
-        print(f"Articles Cleaned: {len(result.get('cleaned_articles', []))}")
-        print(f"Trustworthiness Scores: {len(result.get('trustworthiness_scores', []))}")
-        print(f"Facts Extracted: {len(result.get('extracted_facts', []))}")
-        print("="*60 + "\n")
+        print(f"Scraped {len(text)} characters")
+        return text[:3000]  # Limit to 3000 chars
         
-        logger.info("Analysis completed successfully")
-        return 0
-        
-    except ValueError as e:
-        logger.error(f"Configuration error: {e}")
-        print(f"Error: {e}")
-        return 1
     except Exception as e:
-        logger.error(f"Error: {type(e).__name__}: {e}", exc_info=True)
-        print(f"Unexpected error: {e}")
-        print("Check news_agent.log for details")
-        return 1
+        print(f"Error: {e}")
+        return ""
 
+def analyze_content(content: str, title: str) -> str:
+    """Analyze article content with LLM"""
+    print(f"Analyzing: {title}")
+    
+    try:
+        prompt = PROMPTS["analyze"].format(content=content)
+        response = llm.invoke(prompt)
+        return response.content
+    except Exception as e:
+        print(f"Error: {e}")
+        return "Error analyzing content"
+
+def generate_report(analysis1: str, analysis2: str) -> str:
+    """Generate final report"""
+    print("Generating report...")
+    
+    try:
+        prompt = PROMPTS["report"].format(
+            analysis1=analysis1,
+            analysis2=analysis2
+        )
+        response = llm.invoke(prompt)
+        return response.content
+    except Exception as e:
+        print(f"Error: {e}")
+        return "Error generating report"
 
 def main():
-    """Main entry point"""
-    if len(sys.argv) > 1 and sys.argv[1] == "--custom":
-        logger.info("Running with custom sources")
-        return run_analysis(CUSTOM_SOURCES, "machine learning and world news")
+    """Main function"""
+    print("\n" + "="*60)
+    print("SIMPLE NEWS ANALYZER")
+    print("="*60 + "\n")
+    
+    # URLs to analyze
+    urls = [
+        "https://www.theverge.com/ai-artificial-intelligence",
+        "https://www.techcrunch.com/tag/artificial-intelligence/",
+    ]
+    
+    analyses = []
+    
+    # Scrape and analyze each URL
+    for idx, url in enumerate(urls, 1):
+        print(f"\n[{idx}/{len(urls)}] Processing...")
+        content = scrape_url(url)
+        
+        if content:
+            analysis = analyze_content(content, url)
+            analyses.append(analysis)
+            print("Analysis complete")
+        else:
+            print("Skipped (no content)")
+    
+    # Generate report
+    if len(analyses) >= 2:
+        print("\n" + "="*60)
+        report = generate_report(analyses[0], analyses[1])
+        print("FINAL REPORT")
+        print("="*60)
+        print(report)
     else:
-        logger.info("Running with default sources")
-        return run_analysis(DEFAULT_SOURCES, "latest technology news")
-
+        print("\nNot enough analyses to generate report")
+    
+    print("\n" + "="*60)
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
