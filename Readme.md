@@ -30,6 +30,3 @@ An intelligent news analysis system built with **LangGraph** and **Google Gemini
 
 ---
 
-## Author
-
-Chandan Hegde - [@ChandanHegde07](https://github.com/ChandanHegde07)
