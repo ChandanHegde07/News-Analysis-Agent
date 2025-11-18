@@ -28,5 +28,4 @@ An intelligent news analysis system built with **LangGraph** and **Google Gemini
 - [Google Gemini API Docs](https://ai.google.dev/docs)
 - [LangChain Python Docs](https://python.langchain.com/)
 
----
 
